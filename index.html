@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ワンちゃんお世話ゲーム</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap');
+
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            background-color: #FDF4FF;
+            touch-action: manipulation;
+        }
+
+        /* 犬のアニメーション */
+        @keyframes idle {
+            0%, 100% { transform: scaleY(1); }
+            50% { transform: scaleY(0.96) translateY(2px); }
+        }
+        @keyframes wag {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(15deg); }
+        }
+        @keyframes jump {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+        @keyframes eat {
+            0%, 100% { transform: scale(1) rotate(0); }
+            25% { transform: scale(1.05) rotate(-3deg); }
+            75% { transform: scale(1.05) rotate(3deg); }
+        }
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-50px) scale(1.5); }
+        }
+
+        .dog-idle { animation: idle 2s infinite ease-in-out; transform-origin: bottom center; }
+        .dog-tail { animation: wag 0.5s infinite ease-in-out; transform-origin: bottom left; }
+        .dog-happy { animation: jump 0.6s infinite ease-in-out; transform-origin: bottom center; }
+        .dog-eat { animation: eat 0.4s infinite; transform-origin: center; }
+        
+        .effect-heart {
+            position: absolute;
+            animation: floatUp 1s ease-out forwards;
+            pointer-events: none;
+            font-size: 24px;
+        }
+
+        /* ゲージのスタイル */
+        .bar-container { background-color: #f3f4f6; border-radius: 999px; overflow: hidden; height: 12px; width: 100%; border: 2px solid #e5e7eb;}
+        .bar-fill { height: 100%; transition: width 0.3s ease, background-color 0.3s ease; }
+
+        /* ゲーム機の筐体風スタイル */
+        .device-frame {
+            box-shadow: 
+                inset 0 10px 20px rgba(255,255,255,0.5),
+                0 15px 35px rgba(0,0,0,0.1),
+                0 5px 15px rgba(0,0,0,0.05);
+        }
+        .screen-inner {
+            box-shadow: inset 0 5px 15px rgba(0,0,0,0.1);
+            background: linear-gradient(to bottom, #E0F2FE, #BAE6FD);
+        }
+        
+        /* うんち */
+        .poop {
+            position: absolute;
+            font-size: 28px;
+            cursor: pointer;
+            filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2));
+            transition: transform 0.1s;
+        }
+        .poop:active { transform: scale(0.9); }
+        
+        /* 隠し要素 */
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col items-center justify-center p-4">
+
+    <!-- ゲーム機本体 -->
+    <div class="device-frame bg-pink-300 p-4 sm:p-6 rounded-[40px] w-full max-w-sm border-4 border-pink-400 relative">
+        
+        <!-- ステータス画面 -->
+        <div class="bg-white rounded-2xl p-3 mb-4 shadow-sm border-2 border-pink-200">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-bold text-gray-700 w-16">おなか</span>
+                <div class="bar-container flex-1 mx-2"><div id="bar-hunger" class="bar-fill bg-green-400" style="width: 50%;"></div></div>
+            </div>
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-bold text-gray-700 w-16">ごきげん</span>
+                <div class="bar-container flex-1 mx-2"><div id="bar-happy" class="bar-fill bg-yellow-400" style="width: 50%;"></div></div>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-sm font-bold text-gray-700 w-16">せいけつ</span>
+                <div class="bar-container flex-1 mx-2"><div id="bar-clean" class="bar-fill bg-blue-400" style="width: 100%;"></div></div>
+            </div>
+        </div>
+
+        <!-- メイン画面（スクリーン） -->
+        <div class="screen-inner rounded-3xl h-64 relative overflow-hidden mb-6 border-4 border-gray-100 flex items-end justify-center pb-4 cursor-pointer select-none" id="game-screen">
+            <!-- 背景の装飾 -->
+            <div class="absolute bottom-0 w-full h-1/3 bg-green-300 rounded-t-[50%]" style="opacity: 0.6;"></div>
+            
+            <!-- 敵の犬（イタズラ犬） -->
+            <div id="enemy-container" class="hidden absolute z-50 text-5xl cursor-pointer drop-shadow-md hover:scale-110 transition-transform" onclick="defeatEnemy(event)">
+                🐺
+            </div>
+
+            <!-- うんちコンテナ -->
+            <div id="poop-container" class="absolute w-full h-full pointer-events-none z-20"></div>
+
+            <!-- ごはんアイコン（アニメーション用） -->
+            <div id="food-item" class="absolute top-10 text-4xl hidden z-30 transition-transform duration-300">🍖</div>
+
+            <!-- 犬のSVG -->
+            <div id="dog-container" class="dog-idle relative z-10">
+                <svg width="150" height="150" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                    <!-- 尻尾 -->
+                    <path class="dog-tail" d="M 80 60 Q 95 50 90 40 Q 85 30 75 45" fill="#D97706" stroke="#B45309" stroke-width="2" stroke-linecap="round"/>
+                    
+                    <!-- 後ろ足 -->
+                    <rect x="35" y="80" width="10" height="15" rx="5" fill="#D97706" />
+                    <rect x="65" y="80" width="10" height="15" rx="5" fill="#D97706" />
+                    
+                    <!-- 体 -->
+                    <ellipse cx="55" cy="65" rx="30" ry="25" fill="#FBBF24" stroke="#D97706" stroke-width="2"/>
+                    <ellipse cx="55" cy="70" rx="20" ry="15" fill="#FEF3C7" /> <!-- お腹 -->
+
+                    <!-- 前足 -->
+                    <rect x="40" y="82" width="10" height="15" rx="5" fill="#FBBF24" stroke="#D97706" stroke-width="1.5" />
+                    <rect x="60" y="82" width="10" height="15" rx="5" fill="#FBBF24" stroke="#D97706" stroke-width="1.5" />
+
+                    <!-- 頭 -->
+                    <g id="dog-head">
+                        <!-- 耳 -->
+                        <polygon points="20,25 35,10 45,25" fill="#D97706" stroke="#B45309" stroke-width="2" stroke-linejoin="round"/>
+                        <polygon points="80,25 65,10 55,25" fill="#D97706" stroke="#B45309" stroke-width="2" stroke-linejoin="round"/>
+                        
+                        <!-- 顔の輪郭 -->
+                        <circle cx="50" cy="40" r="28" fill="#FBBF24" stroke="#D97706" stroke-width="2"/>
+                        <!-- マズル（鼻周り） -->
+                        <ellipse cx="50" cy="48" rx="14" ry="10" fill="#FEF3C7" />
+                        
+                        <!-- 鼻 -->
+                        <ellipse cx="50" cy="45" rx="4" ry="3" fill="#1F2937" />
+                        
+                        <!-- 目（通常） -->
+                        <g id="eyes-normal">
+                            <circle cx="40" cy="35" r="3" fill="#1F2937" />
+                            <circle cx="60" cy="35" r="3" fill="#1F2937" />
+                        </g>
+                        <!-- 目（喜ぶ） -->
+                        <g id="eyes-happy" class="hidden">
+                            <path d="M 37 36 Q 40 32 43 36" fill="none" stroke="#1F2937" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M 57 36 Q 60 32 63 36" fill="none" stroke="#1F2937" stroke-width="2" stroke-linecap="round"/>
+                        </g>
+                        <!-- 目（悲しい/お腹すいた） -->
+                        <g id="eyes-sad" class="hidden">
+                            <line x1="38" y1="34" x2="43" y2="37" stroke="#1F2937" stroke-width="2" stroke-linecap="round"/>
+                            <circle cx="40" cy="37" r="2.5" fill="#1F2937" />
+                            <line x1="62" y1="34" x2="57" y2="37" stroke="#1F2937" stroke-width="2" stroke-linecap="round"/>
+                            <circle cx="60" cy="37" r="2.5" fill="#1F2937" />
+                        </g>
+
+                        <!-- 口（通常） -->
+                        <path id="mouth-normal" d="M 45 52 Q 50 56 55 52" fill="none" stroke="#1F2937" stroke-width="1.5" stroke-linecap="round"/>
+                        <!-- 口（喜ぶ・食べる） -->
+                        <path id="mouth-happy" d="M 45 52 Q 50 60 55 52 Z" fill="#FCA5A5" stroke="#1F2937" stroke-width="1.5" class="hidden"/>
+                        <!-- 口（悲しい） -->
+                        <path id="mouth-sad" d="M 45 54 Q 50 50 55 54" fill="none" stroke="#1F2937" stroke-width="1.5" stroke-linecap="round" class="hidden"/>
+
+                        <!-- アクセサリー -->
+                        <!-- シルクハット -->
+                        <g id="acc-hat" class="hidden">
+                            <rect x="35" y="1" width="30" height="15" fill="#1E3A8A" />
+                            <rect x="35" y="12" width="30" height="4" fill="#EF4444" />
+                            <ellipse cx="50" cy="16" rx="22" ry="4" fill="#1E3A8A" />
+                        </g>
+                        <!-- サングラス -->
+                        <g id="acc-glasses" class="hidden">
+                            <path d="M 30 33 L 70 33" stroke="#1F2937" stroke-width="3" />
+                            <rect x="32" y="33" width="16" height="10" rx="3" fill="#111827" opacity="0.8"/>
+                            <rect x="52" y="33" width="16" height="10" rx="3" fill="#111827" opacity="0.8"/>
+                            <path d="M 35 35 L 45 35" stroke="#38BDF8" stroke-width="1.5" opacity="0.6"/>
+                            <path d="M 55 35 L 65 35" stroke="#38BDF8" stroke-width="1.5" opacity="0.6"/>
+                        </g>
+                        <!-- 王冠（追加アイテム） -->
+                        <g id="acc-crown" class="hidden">
+                            <polygon points="32,10 68,10 75,-8 50,2 25,-8" fill="#FBBF24" stroke="#D97706" stroke-width="1.5"/>
+                            <circle cx="25" cy="-8" r="3" fill="#EF4444"/>
+                            <circle cx="50" cy="2" r="3" fill="#3B82F6"/>
+                            <circle cx="75" cy="-8" r="3" fill="#10B981"/>
+                        </g>
+                        <!-- ヒゲ（追加アイテム） -->
+                        <g id="acc-mustache" class="hidden">
+                            <path d="M 38 49 Q 50 44 62 49 Q 55 53 50 49 Q 45 53 38 49 Z" fill="#1F2937"/>
+                        </g>
+                    </g>
+                    <!-- 蝶ネクタイ (首元) -->
+                    <g id="acc-bowtie" class="hidden">
+                        <polygon points="50,62 40,55 40,69" fill="#EF4444" />
+                        <polygon points="50,62 60,55 60,69" fill="#EF4444" />
+                        <circle cx="50" cy="62" r="3" fill="#B91C1C" />
+                    </g>
+                    <!-- スカーフ（追加アイテム） -->
+                    <g id="acc-scarf" class="hidden">
+                        <path d="M 36 60 Q 50 72 64 60 L 58 66 L 65 78 L 54 70 Z" fill="#10B981"/>
+                        <path d="M 36 60 Q 50 68 64 60 Z" fill="#059669"/>
+                    </g>
+                </svg>
+            </div>
+            
+            <!-- メッセージ表示エリア -->
+            <div id="message-area" class="absolute top-4 bg-white/80 px-4 py-1 rounded-full text-sm font-bold text-gray-700 shadow-sm opacity-0 transition-opacity duration-300 z-40">
+                おなかいっぱい！
+            </div>
+        </div>
+
+        <!-- アクションボタン群 -->
+        <div class="grid grid-cols-4 gap-2 mb-4">
+            <button onclick="feed()" class="bg-amber-400 hover:bg-amber-500 text-white p-3 rounded-2xl shadow-[0_4px_0_#b45309] active:shadow-[0_0px_0_#b45309] active:translate-y-1 transition-all flex flex-col items-center justify-center gap-1">
+                <span class="text-xl">🍖</span>
+                <span class="text-xs font-bold">ごはん</span>
+            </button>
+            <button onclick="play()" class="bg-rose-400 hover:bg-rose-500 text-white p-3 rounded-2xl shadow-[0_4px_0_#be123c] active:shadow-[0_0px_0_#be123c] active:translate-y-1 transition-all flex flex-col items-center justify-center gap-1">
+                <span class="text-xl">🎾</span>
+                <span class="text-xs font-bold">あそぶ</span>
+            </button>
+            <button onclick="clean()" class="bg-cyan-400 hover:bg-cyan-500 text-white p-3 rounded-2xl shadow-[0_4px_0_#0e7490] active:shadow-[0_0px_0_#0e7490] active:translate-y-1 transition-all flex flex-col items-center justify-center gap-1">
+                <span class="text-xl">🧹</span>
+                <span class="text-xs font-bold">そうじ</span>
+            </button>
+            <button onclick="toggleDressupMenu()" class="bg-purple-400 hover:bg-purple-500 text-white p-3 rounded-2xl shadow-[0_4px_0_#6d28d9] active:shadow-[0_0px_0_#6d28d9] active:translate-y-1 transition-all flex flex-col items-center justify-center gap-1">
+                <span class="text-xl">🎀</span>
+                <span class="text-xs font-bold">きせかえ</span>
+            </button>
+        </div>
+
+        <!-- きせかえメニュー (初期非表示) -->
+        <div id="dressup-menu" class="hidden absolute bottom-24 left-0 w-full px-6 z-50">
+            <div class="bg-white rounded-2xl p-3 shadow-lg border-2 border-purple-200 flex justify-center flex-wrap gap-2">
+                <button onclick="toggleItem('hat')" class="p-2 bg-gray-100 rounded-xl hover:bg-gray-200 flex flex-col items-center w-16">
+                    <span class="text-2xl">🎩</span>
+                    <span class="text-[10px] font-bold mt-1 text-gray-600">ぼうし</span>
+                </button>
+                <button onclick="toggleItem('glasses')" class="p-2 bg-gray-100 rounded-xl hover:bg-gray-200 flex flex-col items-center w-16">
+                    <span class="text-2xl">🕶️</span>
+                    <span class="text-[10px] font-bold mt-1 text-gray-600">メガネ</span>
+                </button>
+                <button onclick="toggleItem('bowtie')" class="p-2 bg-gray-100 rounded-xl hover:bg-gray-200 flex flex-col items-center w-16">
+                    <span class="text-2xl">🎀</span>
+                    <span class="text-[10px] font-bold mt-1 text-gray-600">リボン</span>
+                </button>
+                
+                <!-- ロック解除される追加アイテム -->
+                <button id="btn-crown" onclick="toggleItem('crown')" class="hidden p-2 bg-yellow-50 rounded-xl hover:bg-yellow-100 flex flex-col items-center w-16 border border-yellow-200">
+                    <span class="text-2xl">👑</span>
+                    <span class="text-[10px] font-bold mt-1 text-yellow-700">おうかん</span>
+                </button>
+                <button id="btn-mustache" onclick="toggleItem('mustache')" class="hidden p-2 bg-gray-100 rounded-xl hover:bg-gray-200 flex flex-col items-center w-16 border border-gray-200">
+                    <span class="text-2xl">🧔</span>
+                    <span class="text-[10px] font-bold mt-1 text-gray-700">ヒゲ</span>
+                </button>
+                <button id="btn-scarf" onclick="toggleItem('scarf')" class="hidden p-2 bg-green-50 rounded-xl hover:bg-green-100 flex flex-col items-center w-16 border border-green-200">
+                    <span class="text-2xl">🧣</span>
+                    <span class="text-[10px] font-bold mt-1 text-green-700">スカーフ</span>
+                </button>
+
+                <button onclick="toggleDressupMenu()" class="p-2 bg-red-100 rounded-xl hover:bg-red-200 flex flex-col items-center w-12 justify-center text-red-600">
+                    <span class="text-lg font-bold">×</span>
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 遊び方説明 -->
+    <div class="text-gray-600 text-sm font-bold text-center mt-4 max-w-sm">
+        <p>画面をタップしてなでてあげよう！</p>
+        <p>時間が経つとお腹が空いたり、うんちをしたりするよ。</p>
+    </div>
+
+    <script>
+        // ゲームの状態
+        let state = {
+            hunger: 50,
+            happiness: 50,
+            clean: 100,
+        };
+        let poops = 0;
+        let isAnimating = false;
+        let currentEmotion = 'normal'; // normal, happy, sad
+        
+        let clothes = {
+            hat: false,
+            glasses: false,
+            bowtie: false,
+            crown: false,
+            mustache: false,
+            scarf: false
+        };
+
+        // イベント要素
+        let enemyActive = false;
+        let lockedItems = ['crown', 'mustache', 'scarf'];
+
+        // DOM要素
+        const barHunger = document.getElementById('bar-hunger');
+        const barHappy = document.getElementById('bar-happy');
+        const barClean = document.getElementById('bar-clean');
+        const dogContainer = document.getElementById('dog-container');
+        const poopContainer = document.getElementById('poop-container');
+        const messageArea = document.getElementById('message-area');
+        const foodItem = document.getElementById('food-item');
+        const dressupMenu = document.getElementById('dressup-menu');
+        const gameScreen = document.getElementById('game-screen');
+        const enemyContainer = document.getElementById('enemy-container');
+
+        // 顔パーツ要素
+        const eyesNormal = document.getElementById('eyes-normal');
+        const eyesHappy = document.getElementById('eyes-happy');
+        const eyesSad = document.getElementById('eyes-sad');
+        const mouthNormal = document.getElementById('mouth-normal');
+        const mouthHappy = document.getElementById('mouth-happy');
+        const mouthSad = document.getElementById('mouth-sad');
+
+        // メインループ（ステータス減少）
+        setInterval(() => {
+            if (isAnimating) return;
+            
+            // 減少量
+            state.hunger = Math.max(0, state.hunger - 2);
+            state.happiness = Math.max(0, state.happiness - 1);
+            
+            // うんちがあると清潔度が下がりやすく、ごきげんも下がる
+            if (poops > 0) {
+                state.clean = Math.max(0, state.clean - poops * 2);
+                state.happiness = Math.max(0, state.happiness - poops * 1);
+            }
+
+            // ランダムでうんちをする（ご飯を食べた後などに確率が上がる設定も可能ですがシンプルに）
+            if (Math.random() < 0.05 && poops < 5 && state.hunger > 10) {
+                addPoop();
+            }
+
+            // 特別イベント：イタズラ犬の出現 (一定確率で発生)
+            if (Math.random() < 0.15 && !enemyActive && lockedItems.length > 0) {
+                spawnEnemy();
+            }
+
+            updateUI();
+        }, 2000);
+
+        // UIの更新
+        function updateUI() {
+            // バーの更新と色の変更
+            updateBar(barHunger, state.hunger);
+            updateBar(barHappy, state.happiness);
+            updateBar(barClean, state.clean);
+
+            // 感情の決定
+            let newEmotion = 'normal';
+            if (state.hunger < 30 || state.happiness < 30 || state.clean < 30) {
+                newEmotion = 'sad';
+            } else if (state.happiness > 70 && state.hunger > 70) {
+                newEmotion = 'happy';
+            }
+
+            setEmotion(newEmotion);
+        }
+
+        function updateBar(element, value) {
+            element.style.width = `${value}%`;
+            // 色の変化
+            if (value < 30) {
+                element.className = 'bar-fill bg-red-500';
+            } else if (value < 60) {
+                element.className = 'bar-fill bg-yellow-400';
+            } else {
+                if(element.id === 'bar-hunger') element.className = 'bar-fill bg-green-400';
+                if(element.id === 'bar-happy') element.className = 'bar-fill bg-yellow-400';
+                if(element.id === 'bar-clean') element.className = 'bar-fill bg-blue-400';
+            }
+        }
+
+        // 表情とアニメーションの変更
+        function setEmotion(emotion, force = false) {
+            if (isAnimating && !force) return;
+            currentEmotion = emotion;
+
+            // リセット
+            eyesNormal.classList.add('hidden');
+            eyesHappy.classList.add('hidden');
+            eyesSad.classList.add('hidden');
+            mouthNormal.classList.add('hidden');
+            mouthHappy.classList.add('hidden');
+            mouthSad.classList.add('hidden');
+            dogContainer.className = 'relative z-10'; // アニメーションリセット
+
+            if (emotion === 'happy') {
+                eyesHappy.classList.remove('hidden');
+                mouthHappy.classList.remove('hidden');
+                if(!isAnimating) dogContainer.classList.add('dog-happy');
+            } else if (emotion === 'sad') {
+                eyesSad.classList.remove('hidden');
+                mouthSad.classList.remove('hidden');
+                if(!isAnimating) dogContainer.classList.add('dog-idle');
+            } else if (emotion === 'eating') {
+                eyesHappy.classList.remove('hidden');
+                mouthHappy.classList.remove('hidden');
+                dogContainer.classList.add('dog-eat');
+            } else { // normal
+                eyesNormal.classList.remove('hidden');
+                mouthNormal.classList.remove('hidden');
+                if(!isAnimating) dogContainer.classList.add('dog-idle');
+            }
+        }
+
+        // アクション：ごはん
+        function feed() {
+            if (isAnimating) return;
+            if (state.hunger >= 100) {
+                showMessage('おなかいっぱい！');
+                return;
+            }
+
+            isAnimating = true;
+            setEmotion('eating', true);
+            
+            // 食べ物アニメーション
+            foodItem.classList.remove('hidden');
+            foodItem.style.transform = 'translateY(0) scale(1)';
+            
+            setTimeout(() => {
+                foodItem.style.transform = 'translateY(50px) scale(0)';
+            }, 50);
+
+            setTimeout(() => {
+                foodItem.classList.add('hidden');
+                state.hunger = Math.min(100, state.hunger + 30);
+                
+                // 食べた後はうんちしやすくなる
+                if(Math.random() < 0.4 && poops < 5) {
+                    setTimeout(addPoop, 1000);
+                }
+
+                isAnimating = false;
+                createEffect('✨');
+                updateUI();
+                setEmotion('happy');
+                setTimeout(updateUI, 2000);
+            }, 800);
+        }
+
+        // アクション：あそぶ
+        function play() {
+            if (isAnimating) return;
+            if (state.hunger < 20) {
+                showMessage('おなかがすいて遊べないよ…');
+                return;
+            }
+
+            isAnimating = true;
+            state.happiness = Math.min(100, state.happiness + 20);
+            state.hunger = Math.max(0, state.hunger - 5); // 遊ぶと少しお腹が減る
+            
+            setEmotion('happy', true);
+            dogContainer.classList.add('dog-happy');
+            createEffect('❤️');
+
+            setTimeout(() => {
+                isAnimating = false;
+                updateUI();
+            }, 1000);
+        }
+
+        // アクション：そうじ
+        function clean() {
+            if (poops === 0) {
+                if(state.clean < 100) {
+                    state.clean = 100;
+                    createEffect('✨');
+                    showMessage('ピカピカになった！');
+                } else {
+                    showMessage('もうキレイだよ！');
+                }
+                updateUI();
+                return;
+            }
+
+            poopContainer.innerHTML = ''; // うんちをすべて削除
+            poops = 0;
+            state.clean = 100;
+            
+            createEffect('🫧');
+            showMessage('スッキリ！');
+            updateUI();
+        }
+
+        // うんちを追加
+        function addPoop() {
+            poops++;
+            const poop = document.createElement('div');
+            poop.className = 'poop pointer-events-auto';
+            poop.innerText = '💩';
+            
+            // ランダムな位置に配置
+            const x = 10 + Math.random() * 70; // 10% ~ 80%
+            const y = 60 + Math.random() * 20; // 60% ~ 80% (足元)
+            poop.style.left = `${x}%`;
+            poop.style.top = `${y}%`;
+            
+            // タップで個別にお掃除可能
+            poop.onclick = (e) => {
+                e.stopPropagation();
+                poop.remove();
+                poops--;
+                state.clean = Math.min(100, state.clean + 10);
+                createEffect('✨', e.clientX, e.clientY);
+                updateUI();
+            };
+
+            poopContainer.appendChild(poop);
+            updateUI();
+        }
+
+        // 画面タップでなでる
+        gameScreen.addEventListener('click', (e) => {
+            // うんちクリック時は反応させないための除外処理は poop.onclick の stopPropagation で対応
+            if(isAnimating) return;
+            play(); 
+        });
+
+        // きせかえメニューの表示切替
+        function toggleDressupMenu() {
+            dressupMenu.classList.toggle('hidden');
+        }
+
+        // アイテムの着脱
+        function toggleItem(item) {
+            clothes[item] = !clothes[item];
+            const svgGroup = document.getElementById(`acc-${item}`);
+            if (clothes[item]) {
+                svgGroup.classList.remove('hidden');
+                createEffect('✨');
+            } else {
+                svgGroup.classList.add('hidden');
+            }
+        }
+
+        // メッセージ表示
+        function showMessage(text) {
+            messageArea.innerText = text;
+            messageArea.style.opacity = '1';
+            setTimeout(() => {
+                messageArea.style.opacity = '0';
+            }, 2000);
+        }
+
+        // エフェクト生成（ハートやキラキラ）
+        function createEffect(emoji, clientX = null, clientY = null) {
+            const effect = document.createElement('div');
+            effect.className = 'effect-heart z-50';
+            effect.innerText = emoji;
+            
+            if (clientX && clientY) {
+                // 指定座標（画面全体に対する相対位置からゲームスクリーン内への変換は少し複雑なので簡易的に配置）
+                const rect = gameScreen.getBoundingClientRect();
+                effect.style.left = `${clientX - rect.left - 10}px`;
+                effect.style.top = `${clientY - rect.top - 10}px`;
+            } else {
+                // 中央（犬の頭上）
+                effect.style.left = '50%';
+                effect.style.top = '30%';
+                effect.style.transform = 'translateX(-50%)';
+            }
+            
+            gameScreen.appendChild(effect);
+            
+            setTimeout(() => {
+                effect.remove();
+            }, 1000);
+        }
+
+        // イタズラ犬を出現させる
+        function spawnEnemy() {
+            if (enemyActive || lockedItems.length === 0) return;
+            enemyActive = true;
+            enemyContainer.classList.remove('hidden');
+            
+            // 画面左外からスタート
+            enemyContainer.style.left = '-60px'; 
+            let pos = -60;
+            showMessage('イタズラ犬がきた！タップで追い払え！');
+
+            const moveEnemy = setInterval(() => {
+                if (!enemyActive) {
+                    clearInterval(moveEnemy);
+                    return;
+                }
+                pos += 3;
+                enemyContainer.style.left = `${pos}px`;
+                // フワフワ上下に揺らす
+                let y = 100 + Math.sin(pos / 15) * 15;
+                enemyContainer.style.top = `${y}px`;
+
+                // 画面右端に到達したら逃がす
+                if (pos > gameScreen.clientWidth + 20) {
+                    clearInterval(moveEnemy);
+                    enemyContainer.classList.add('hidden');
+                    enemyActive = false;
+                    showMessage('イタズラ犬に逃げられた…');
+                }
+            }, 50);
+        }
+
+        // イタズラ犬をタップして追い払う
+        function defeatEnemy(e) {
+            if (!enemyActive) return;
+            e.stopPropagation(); // 犬をなでる動作を暴発させない
+            
+            enemyActive = false;
+            enemyContainer.classList.add('hidden');
+            createEffect('💥', e.clientX, e.clientY);
+
+            if (lockedItems.length > 0) {
+                const newItem = lockedItems.shift(); // リストから次のアイテムを取り出す
+                const btn = document.getElementById(`btn-${newItem}`);
+                if (btn) btn.classList.remove('hidden');
+                
+                showMessage('やった！新しいキセカエをゲット！');
+            }
+        }
+
+        // 初期化
+        updateUI();
+
+    </script>
+</body>
+</html>
