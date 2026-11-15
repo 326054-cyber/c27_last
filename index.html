@@ -553,10 +553,12 @@
         }
 
         // メッセージ表示
+        let messageTimer = null;
         function showMessage(text) {
+            clearTimeout(messageTimer);
             messageArea.innerText = text;
             messageArea.style.opacity = '1';
-            setTimeout(() => {
+            messageTimer = setTimeout(() => {
                 messageArea.style.opacity = '0';
             }, 2000);
         }
